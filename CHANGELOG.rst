@@ -11,6 +11,172 @@
 Changelog
 +++++++++
 
+0.22.1
+======
+
+- Do not remove absolute build RPATH entries, unless pointing within the
+  build directory. Fixes an issue when using system compilers in a conda
+  environment.
+
+Daniele Nicolodi, Ralf Gommers --- 01-10-2026.
+
+
+0.22.0
+======
+
+- Add support for adding RPATH entries specified with ``install_rpath``
+  argument to Meson functions that accept it.
+- Add support for removing build RPATH entries added by Meson to allow
+  executing parts of the project from the build directory.
+- Fix corner cases in handling RPATH entries and relocation of shared
+  libraries distributed as part of Python packages.
+
+Daniele Nicolodi, Mike Taves, Nathan Goldbaum, Ralf Gommers --- 25-09-2026.
+
+
+0.21.1
+======
+
+- Restore compatibility with Python interpreters not implementing PEP 3149.
+
+Daniele Nicolodi, Ralf Gommers --- 11-09-2026.
+
+
+0.21.0
+======
+
+- Add support for the stable ABI for free-threaded interpreters (``abi3t``).
+- Add support for the stable ABI extension modules' platform-specific filename
+  suffixes introduced in Python 3.15.
+- Allow specifying ``editable-verbose`` in ``pyproject.toml``.
+- Improve the default behavior of editable installs by capturing and reporting
+  build errors when rebuilding.
+- Use ``.start`` files (PEP 829) instead of ``.pth`` files to implement editable
+  wheels for Python 3.15 and later.
+- From this release onwards, SSH keys used to sign release tags.
+
+Daniele Nicolodi, Michał Górny, Ralf Gommers --- 07-09-2026.
+
+
+0.20.0
+======
+
+- Add support for targeting the Android platform.
+
+Daniele Nicolodi, Malcolm Smith, Ralf Gommers --- 10-06-2026.
+
+
+0.19.0
+======
+
+- Drop Python 3.8 support.
+- Development-related extras were moved to dependency groups.
+- Add support for targeting the iOS platform.
+- The ``strip`` binary is now included in synthesized cross files.
+- Documentation improvements: add more examples for specific use cases, and a
+  contributing guide.
+- Use trusted publishing with digital attestations to upload release artifacts
+  to PyPI.
+
+Andrew Annex, Daniele Nicolodi, Michał Górny, Ralf Gommers, Russell
+Keith-Magee, Tobias Diez --- 14-01-2026.
+
+
+0.18.0
+======
+
+- Drop Python 3.7 support.
+- Bump minimum required Meson version to 0.64.0.
+- Bump minimum required ``pyproject-metadata`` version to 0.9.0 to enable
+  support for PEP 639.
+- Bump minimum required ``packaging`` version to 23.2. ``pyproject-metadata``
+  version 0.9.1 requires this version of ``packaging`` but fails to record the
+  version requirement in the package metadata. Enforcing the version
+  requirement in ``meson-python`` allows fixing possible dependency problems
+  without having ``meson-python`` depend on a very recent
+  ``pyproject-metadata`` release.
+- Add support for PEP 639 metadata fields. Canonicalization and validation of
+  the license expression requires ``packaging`` version 24.2 or later.
+- Add support for declaring the ``licence`` and ``license-files`` as dynamic
+  fields in ``pyproject.toml`` to extract the package license and license
+  files from the ones declared via the ``project()`` call in
+  ``meson.build``. This requires Meson version 1.6.0 or later.
+- Add support for ``RPATH`` handling on SunOS.
+- Include shared libraries built as part of the Meson project in the Python
+  wheels also on Windows, when explicitly enabled via the
+  ``tool.meson-python.allow-windows-internal-shared-libs`` project setting.
+- Add support for symbolic links that point to files within the source tree.
+  They are now included as regular files in the sdist archive.
+
+Daniele Nicolodi, Marcel Telka, Ralf Gommers --- 30-04-2025.
+
+
+0.17.1
+======
+
+- Update tests to work with newly released ``pyproject-metadata`` 0.9.0.
+- Fix tests to work when not executed in a git work tree.
+
+Daniele Nicolodi --- 23-10-2024.
+
+
+0.17.0
+======
+
+- Refuse to build wheels targeting the limited API and free-threaded CPython:
+  the free-threaded CPython build does not support the limited API yet.
+- Always use UTF-8 encoding for writing Meson native and cross files. Always
+  use UTF-8 encoding for reading read Meson introspection data and
+  ``pyproject.toml``.
+- Do not include uncommitted changes when creating source distributions.
+  Previously, uncommitted changes to files under version control were
+  included, but not untracked files. There was no strong use case for this
+  behavior and it was too surprising to keep it.
+- Make source distribution reproducible: use the modification time of
+  ``pyproject.toml`` for the generated files in the source distribution
+  archives.
+- Disable the ``abi3`` wheel tag for PyPy when building wheels targeting the
+  limited API: PyPy supports the limited API but not the stable ABI.
+- Raise ``ImportError`` when the package rebuild fails when importing an
+  editable install.
+- Fix the wheel platform tag for GraalPy.
+- Add ``.gitignore`` and ``.hgignore`` files to build directory if it is empty.
+- Allow ``install_subdir()`` of missing directories.
+
+Christian Clauss, Daniele Nicolodi, Jonathan J. Helmus, Leo Singer, Loïc
+Estève, Michael Simacek, Ralf Gommers, Simon McVittie --- 19-10-2024.
+
+
+0.16.0
+======
+
+- Correctly detect a wheel shipping shared libraries as being platform
+  dependent also when it does not ship compiled executables or Python
+  extension modules.
+- Use 11.0 as minimum macOS platform ABI tag on arm64: lower versions
+  do not exist on arm64.
+- Improve parsing of the ``$ARCHFLAGS`` environment
+  variable. Correctly handle repeated ``-arch`` flags.
+- Do not break when trying to log filename containing Unicode
+  characters that cannot be encoded in the encoding used by the
+  standard output stream.
+- Drop dependency on ``colorama`` on Windows.
+- Suppress all uses of ANSI terminal escapes when logging to a stream
+  that does not support them.
+- Fix ANSI escape coloring of error messages.
+- Respect the ``exclude_dirs`` and ``exclude_files`` arguments passed
+  to the ``install_subdir()`` Meson function in editable installs too.
+- Make ``pkgutil.iter_packages()`` work properly for modules loaded
+  from editable installs.
+- Add support for the ``custom_target()`` Meson function installing a
+  directory.
+- In editable installs, when a rebuild is triggered on module import,
+  emit a message indicating that the package is being rebuilt but
+  suppress any output when there is no work to do.
+
+Daniele Nicolodi, Loïc Estève, Ralf Gommers --- 16-04-2024
+
+
 0.15.0
 ======
 

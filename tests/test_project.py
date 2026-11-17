@@ -4,9 +4,13 @@
 
 import ast
 import os
+import platform
 import shutil
 import sys
+import sysconfig
 import textwrap
+
+from unittest.mock import Mock
 
 
 if sys.version_info < (3, 11):
@@ -19,11 +23,13 @@ import pytest
 
 import mesonpy
 
-from .conftest import in_git_repo_context, package_dir
+from mesonpy._util import chdir
+
+from .conftest import MESON_VERSION, in_git_repo_context, metadata, package_dir
 
 
 def test_unsupported_python_version(package_unsupported_python_version):
-    with pytest.raises(mesonpy.MesonBuilderError, match='Package requires Python version ==1.0.0'):
+    with pytest.raises(mesonpy.MesonBuilderError, match='The package requires Python version ==1.0.0'):
         with mesonpy._project():
             pass
 
@@ -38,6 +44,135 @@ def test_missing_dynamic_version(package_missing_dynamic_version):
     with pytest.raises(pyproject_metadata.ConfigurationError, match='Field "version" declared as dynamic but'):
         with mesonpy._project():
             pass
+
+
+@pytest.mark.skipif(MESON_VERSION < (1, 6, 0), reason='meson too old')
+@pytest.mark.filterwarnings('ignore:canonicalization and validation of license expression')
+def test_meson_build_metadata(tmp_path):
+    tmp_path.joinpath('pyproject.toml').write_text(textwrap.dedent('''
+        [build-system]
+        build-backend = 'mesonpy'
+        requires = ['meson-python']
+    '''), encoding='utf8')
+
+    tmp_path.joinpath('meson.build').write_text(textwrap.dedent('''
+        project('test', version: '1.2.3', license: 'MIT', license_files: 'LICENSE')
+    '''), encoding='utf8')
+
+    tmp_path.joinpath('LICENSE').write_text('')
+
+    p = mesonpy.Project(tmp_path, tmp_path / 'build')
+
+    assert metadata(bytes(p._metadata.as_rfc822())) == metadata(textwrap.dedent('''\
+        Metadata-Version: 2.4
+        Name: test
+        Version: 1.2.3
+        License-Expression: MIT
+        License-File: LICENSE
+    '''))
+
+
+@pytest.mark.skipif(MESON_VERSION < (1, 6, 0), reason='meson too old')
+@pytest.mark.filterwarnings('ignore:canonicalization and validation of license expression')
+def test_dynamic_license(tmp_path):
+    tmp_path.joinpath('pyproject.toml').write_text(textwrap.dedent('''
+        [build-system]
+        build-backend = 'mesonpy'
+        requires = ['meson-python']
+
+        [project]
+        name = 'test'
+        version = '1.0.0'
+        dynamic = ['license']
+    '''), encoding='utf8')
+
+    tmp_path.joinpath('meson.build').write_text(textwrap.dedent('''
+        project('test', license: 'MIT')
+    '''), encoding='utf8')
+
+    p = mesonpy.Project(tmp_path, tmp_path / 'build')
+
+    assert metadata(bytes(p._metadata.as_rfc822())) == metadata(textwrap.dedent('''\
+        Metadata-Version: 2.4
+        Name: test
+        Version: 1.0.0
+        License-Expression: MIT
+    '''))
+
+
+@pytest.mark.skipif(MESON_VERSION < (1, 6, 0), reason='meson too old')
+@pytest.mark.filterwarnings('ignore:canonicalization and validation of license expression')
+def test_dynamic_license_list(tmp_path):
+    tmp_path.joinpath('pyproject.toml').write_text(textwrap.dedent('''
+        [build-system]
+        build-backend = 'mesonpy'
+        requires = ['meson-python']
+
+        [project]
+        name = 'test'
+        version = '1.0.0'
+        dynamic = ['license']
+    '''), encoding='utf8')
+
+    tmp_path.joinpath('meson.build').write_text(textwrap.dedent('''
+        project('test', license: ['MIT', 'BSD-3-Clause'])
+    '''), encoding='utf8')
+
+    with pytest.raises(pyproject_metadata.ConfigurationError, match='Using a list of strings for the license'):
+        mesonpy.Project(tmp_path, tmp_path / 'build')
+
+
+@pytest.mark.skipif(MESON_VERSION < (1, 6, 0), reason='meson too old')
+@pytest.mark.filterwarnings('ignore:canonicalization and validation of license expression')
+def test_dynamic_license_missing(tmp_path):
+    tmp_path.joinpath('pyproject.toml').write_text(textwrap.dedent('''
+        [build-system]
+        build-backend = 'mesonpy'
+        requires = ['meson-python']
+
+        [project]
+        name = 'test'
+        version = '1.0.0'
+        dynamic = ['license']
+    '''), encoding='utf8')
+
+    tmp_path.joinpath('meson.build').write_text(textwrap.dedent('''
+        project('test')
+    '''), encoding='utf8')
+
+    with pytest.raises(pyproject_metadata.ConfigurationError, match='Field "license" declared as dynamic but'):
+        mesonpy.Project(tmp_path, tmp_path / 'build')
+
+
+@pytest.mark.skipif(MESON_VERSION < (1, 6, 0), reason='meson too old')
+@pytest.mark.filterwarnings('ignore:canonicalization and validation of license expression')
+def test_dynamic_license_files(tmp_path):
+    tmp_path.joinpath('pyproject.toml').write_text(textwrap.dedent('''
+        [build-system]
+        build-backend = 'mesonpy'
+        requires = ['meson-python']
+
+        [project]
+        name = 'test'
+        version = '1.0.0'
+        dynamic = ['license', 'license-files']
+    '''), encoding='utf8')
+
+    tmp_path.joinpath('meson.build').write_text(textwrap.dedent('''
+        project('test', license: 'MIT', license_files: ['LICENSE'])
+    '''), encoding='utf8')
+
+    tmp_path.joinpath('LICENSE').write_text('')
+
+    p = mesonpy.Project(tmp_path, tmp_path / 'build')
+
+    assert metadata(bytes(p._metadata.as_rfc822())) == metadata(textwrap.dedent('''\
+        Metadata-Version: 2.4
+        Name: test
+        Version: 1.0.0
+        License-Expression: MIT
+        License-File: LICENSE
+    '''))
 
 
 def test_user_args(package_user_args, tmp_path, monkeypatch):
@@ -69,7 +204,6 @@ def test_user_args(package_user_args, tmp_path, monkeypatch):
         'dist-args': ('cli-dist',),
         'setup-args': ('cli-setup',),
         'compile-args': ('cli-compile',),
-        'install-args': ('cli-install',),
     }
 
     with in_git_repo_context():
@@ -91,16 +225,14 @@ def test_user_args(package_user_args, tmp_path, monkeypatch):
     # check that the user options are passed to the invoked commands
     expected = [
         # sdist: calls to 'meson setup' and 'meson dist'
-        ['config-setup', 'cli-setup'],
-        ['config-dist', 'cli-dist'],
-        # wheel: calls to 'meson setup', 'meson compile', and 'meson install'
-        ['config-setup', 'cli-setup'],
-        ['config-compile', 'cli-compile'],
-        ['config-install', 'cli-install'],
+        {'config-setup', 'cli-setup'},
+        {'config-dist', 'cli-dist'},
+        # wheel: calls to 'meson setup' and 'meson compile'
+        {'config-setup', 'cli-setup'},
+        {'config-compile', 'cli-compile'},
     ]
-    for expected_args, cmd_args in zip(expected, args):
-        for arg in expected_args:
-            assert arg in cmd_args
+    for expected_args, cmd_args in zip(expected, args, strict=True):
+        assert expected_args.issubset(cmd_args)
 
 
 @pytest.mark.parametrize('package', ('top-level', 'meson-args'))
@@ -201,7 +333,7 @@ def test_invalid_build_dir(package_pure, tmp_path, mocker):
     project.build()
 
 
-@pytest.mark.skipif(not os.getenv('CI') or sys.platform != 'win32', reason='Requires MSVC')
+@pytest.mark.skipif(not os.getenv('CI') or sys.platform != 'win32', reason='requires MSVC')
 def test_compiler(venv, package_detect_compiler, tmp_path):
     # Check that things are setup properly to use the MSVC compiler on
     # Windows. This effectively means running the compilation step
@@ -211,3 +343,169 @@ def test_compiler(venv, package_detect_compiler, tmp_path):
     venv.pip('install', os.fspath(tmp_path / wheel))
     compiler = venv.python('-c', 'import detect_compiler; print(detect_compiler.compiler())').strip()
     assert compiler == 'msvc'
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS specific test')
+@pytest.mark.parametrize('archflags', [
+    '-arch x86_64',
+    '-arch arm64',
+    '-arch arm64 -arch arm64',
+])
+def test_archflags_envvar_parsing(package_purelib_and_platlib, monkeypatch, archflags):
+    try:
+        monkeypatch.setenv('ARCHFLAGS', archflags)
+        arch = archflags.split()[-1]
+        with mesonpy._project():
+            assert mesonpy._tags.Tag().platform.endswith(arch)
+    finally:
+        # revert environment variable setting done by the in-process build
+        os.environ.pop('_PYTHON_HOST_PLATFORM', None)
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS specific test')
+@pytest.mark.parametrize('archflags', [
+    '-arch arm64 -arch x86_64',
+    '-arch arm64 -DFOO=1',
+])
+def test_archflags_envvar_parsing_invalid(package_purelib_and_platlib, monkeypatch, archflags):
+    try:
+        monkeypatch.setenv('ARCHFLAGS', archflags)
+        with pytest.raises(mesonpy.ConfigError):
+            with mesonpy._project():
+                pass
+    finally:
+        # revert environment variable setting done by the in-process build
+        os.environ.pop('_PYTHON_HOST_PLATFORM', None)
+
+
+@pytest.mark.parametrize(
+    ('cpu', 'cpu_family'),
+    [
+        ('aarch64', 'aarch64'),
+        ('armv7l', 'arm'),
+        ('armv8l', 'arm'),
+        ('i686', 'x86'),
+        ('x86_64', 'x86_64'),
+    ],
+)
+@pytest.mark.parametrize('cross', [True, False])
+def test_android_project(package_simple, monkeypatch, tmp_path, cpu, cpu_family, cross):
+    # Mock being on Android
+    monkeypatch.setattr(sys, 'platform', 'android')
+    monkeypatch.setattr(sys, 'byteorder', 'little')
+    monkeypatch.setattr(platform, 'system', Mock(return_value='Android'))
+    monkeypatch.setattr(platform, 'machine', Mock(return_value=cpu))
+    monkeypatch.setattr(sysconfig, 'get_platform', Mock(return_value='android-24'))
+    if cross:
+        monkeypatch.setenv('CIBUILDWHEEL', '1')
+
+        # Meson may require some tools to be configured when fatal warnings are enabled.
+        # Set the same set of variables as cibuildwheel.
+        for name in ['ar', 'as', 'cc', 'cxx', 'ld', 'nm', 'ranlib', 'readelf', 'strip']:
+            monkeypatch.setenv(name.upper(), f'/path/to/{name}')
+
+    # Create a project.
+    project = mesonpy.Project(source_dir=package_simple, build_dir=tmp_path)
+
+    # When cross-compiling, a cross file should be generated and used.
+    setup_args = project._meson_args['setup']
+    cross_path = tmp_path / 'meson-python-cross-file.ini'
+    if cross:
+        assert setup_args[-2:] == ['--cross-file', str(cross_path)]
+        cross_config = cross_path.read_text().splitlines()
+        assert "system = 'android'" in cross_config
+        assert "subsystem = 'android'" in cross_config
+        assert "kernel = 'linux'" in cross_config
+        assert f"cpu_family = '{cpu_family}'" in cross_config
+        assert f"cpu = '{cpu}'" in cross_config
+        assert "endian = 'little'" in cross_config
+        assert 'needs_exe_wrapper = true' in cross_config
+    else:
+        assert '--cross-file' not in setup_args
+        assert not cross_path.exists()
+
+
+@pytest.mark.skipif(sys.version_info < (3, 13), reason='requires Python 3.13 or higher')
+@pytest.mark.parametrize('multiarch', [
+    'arm64-iphoneos',
+    'arm64-iphonesimulator',
+    'x86_64-iphonesimulator',
+])
+def test_ios_project(package_simple, monkeypatch, multiarch, tmp_path):
+    arch, abi = multiarch.split('-')
+    subsystem = 'ios-simulator' if abi == 'iphonesimulator' else 'ios'
+
+    # Mock being on iOS
+    monkeypatch.setattr(sys, 'platform', 'ios')
+    monkeypatch.setattr(platform, 'machine', Mock(return_value=arch))
+    monkeypatch.setattr(sysconfig, 'get_platform', Mock(return_value=f'ios-13.0-{multiarch}'))
+    ios_ver = platform.IOSVersionInfo('iOS', '13.0', 'iPhone', multiarch.endswith('simulator'))
+    monkeypatch.setattr(platform, 'ios_ver', Mock(return_value=ios_ver))
+
+    # Create an iOS project.
+    project = mesonpy.Project(source_dir=package_simple, build_dir=tmp_path)
+
+    # Meson configuration points at the cross file
+    assert project._meson_args['setup'][-2:] == ['--cross-file', os.fspath(tmp_path / 'meson-python-cross-file.ini')]
+
+    # Meson config files exist, and have some relevant keys
+    assert (tmp_path / 'meson-python-native-file.ini').exists()
+    assert (tmp_path / 'meson-python-cross-file.ini').exists()
+
+    cross_config = (tmp_path / 'meson-python-cross-file.ini').read_text()
+
+    assert "\nsystem = 'ios'\n" in cross_config
+    assert f"\nc = '{arch}-apple-{subsystem}-clang'\n" in cross_config
+    assert f"\nsubsystem = '{subsystem}'\n" in cross_config
+
+
+@pytest.mark.parametrize('verbose', ['true', 'false'])
+def test_editable_verbose_pyproject(tmp_path, verbose):
+    tmp_path.joinpath('pyproject.toml').write_text(textwrap.dedent(f'''
+        [build-system]
+        build-backend = 'mesonpy'
+        requires = ['meson-python']
+
+        [project]
+        name = 'test'
+        version = '1.0.0'
+
+        [tool.meson-python]
+        editable-verbose = {verbose}
+    '''), encoding='utf8')
+
+    tmp_path.joinpath('meson.build').write_text(textwrap.dedent('''
+        project('test')
+    '''), encoding='utf8')
+
+    project = mesonpy.Project(tmp_path, tmp_path / 'build')
+    assert project._editable_verbose == (verbose == 'true')
+
+
+@pytest.mark.parametrize('settings,expected', [
+    ({}, True),
+    ({'editable-verbose': ''}, True),
+    ({'editable-verbose': 'true'}, True),
+    ({'editable-verbose': 'false'}, False),
+], ids=['', '-Ceditable-verbose', '-Ceditable-verbose=true', '-Ceditable-verbose=false'])
+def test_editable_verbose_settings(tmp_path, settings, expected):
+    tmp_path.joinpath('pyproject.toml').write_text(textwrap.dedent('''
+        [build-system]
+        build-backend = 'mesonpy'
+        requires = ['meson-python']
+
+        [project]
+        name = 'test'
+        version = '1.0.0'
+
+        [tool.meson-python]
+        editable-verbose = true
+    '''), encoding='utf8')
+
+    tmp_path.joinpath('meson.build').write_text(textwrap.dedent('''
+        project('test')
+    '''), encoding='utf8')
+
+    with chdir(tmp_path):
+        with mesonpy._project(settings) as project:
+            assert project._editable_verbose == expected

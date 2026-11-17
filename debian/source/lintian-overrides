@@ -1,0 +1,2 @@
+# This *is* mesonpy, so it doesn't need a build-dependency
+missing-prerequisite-for-pyproject-backend mesonpy *

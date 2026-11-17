@@ -6,13 +6,9 @@ from __future__ import annotations
 
 import os
 import platform
+import struct
 import sys
 import sysconfig
-import typing
-
-
-if typing.TYPE_CHECKING:  # pragma: no cover
-    from typing import Optional, Union
 
 
 # https://peps.python.org/pep-0425/#python-tag
@@ -25,7 +21,7 @@ INTERPRETERS = {
 }
 
 
-_32_BIT_INTERPRETER = sys.maxsize <= 2**32
+_32_BIT_INTERPRETER = struct.calcsize('P') == 4
 
 
 def get_interpreter_tag() -> str:
@@ -35,21 +31,24 @@ def get_interpreter_tag() -> str:
     return f'{name}{version[0]}{version[1]}'
 
 
-def _get_config_var(name: str, default: Union[str, int, None] = None) -> Union[str, int, None]:
-    value: Union[str, int, None] = sysconfig.get_config_var(name)
+def _get_config_var(name: str, default: str | int | None = None) -> str | int | None:
+    value: str | int | None = sysconfig.get_config_var(name)
     if value is None:
         return default
     return value
 
 
 def _get_cpython_abi() -> str:
+    # Fallback for Python distributions not implementing PEP 3149.
+    if sys.implementation.name != 'cpython':
+        raise NotImplementedError
     version = sys.version_info
-    debug = pymalloc = ''
+    debug = threading = ''
     if _get_config_var('Py_DEBUG', hasattr(sys, 'gettotalrefcount')):
         debug = 'd'
-    if version < (3, 8) and _get_config_var('WITH_PYMALLOC', True):
-        pymalloc = 'm'
-    return f'cp{version[0]}{version[1]}{debug}{pymalloc}'
+    if version >= (3, 13) and _get_config_var('Py_GIL_DISABLED'):
+        threading = 't'
+    return f'cp{version[0]}{version[1]}{threading}{debug}'
 
 
 def get_abi_tag() -> str:
@@ -60,15 +59,12 @@ def get_abi_tag() -> str:
     # Using $EXT_SUFFIX will not break when PyPy will fix this.
     # See https://foss.heptapod.net/pypy/pypy/-/issues/3816 and
     # https://github.com/pypa/packaging/pull/607.
-    try:
-        empty, abi, ext = str(sysconfig.get_config_var('EXT_SUFFIX')).split('.')
-    except ValueError as exc:
-        # CPython <= 3.8.7 on Windows does not implement PEP3149 and
-        # uses '.pyd' as $EXT_SUFFIX, which does not allow to extract
-        # the interpreter ABI.  Check that the fallback is not hit for
-        # any other Python implementation.
-        if sys.implementation.name != 'cpython':
-            raise NotImplementedError from exc
+    parts = str(sysconfig.get_config_var('EXT_SUFFIX')).split('.')
+
+    # Some Python distributions (notably pkgsrc, the default NetBSD
+    # package manager) patch the Python configure script to remove
+    # $SOABI from $EXT_SUFFIX.
+    if len(parts) < 3:
         return _get_cpython_abi()
 
     # The packaging module initially based his understanding of the
@@ -78,6 +74,7 @@ def get_abi_tag() -> str:
     # explicitly handled below) contains architecture information too.
     # Unfortunately, fixing this now would break compatibility.
 
+    abi = parts[1]
     if abi.startswith('cpython'):
         abi = 'cp' + abi.split('-')[1]
     elif abi.startswith('cp'):
@@ -108,12 +105,13 @@ def _get_macosx_platform_tag() -> str:
     # Override the macOS version if one is provided via the
     # MACOSX_DEPLOYMENT_TARGET environment variable.
     try:
-        version = tuple(map(int, os.environ.get('MACOSX_DEPLOYMENT_TARGET', '').split('.')))[:2]
+        parts = os.environ.get('MACOSX_DEPLOYMENT_TARGET', '').split('.')[:2]
+        version = tuple(map(int, parts + ['0'] * (2 - len(parts))))
     except ValueError:
         version = tuple(map(int, ver.split('.')))[:2]
 
     # Python built with older macOS SDK on macOS 11, reports an
-    # unexising macOS 10.16 version instead of the real version.
+    # nonexistent macOS 10.16 version instead of the real version.
     #
     # The packaging module introduced a workaround
     # https://github.com/pypa/packaging/commit/67c4a2820c549070bbfc4bfbf5e2a250075048da
@@ -129,10 +127,20 @@ def _get_macosx_platform_tag() -> str:
     # can therefore ignore the issue and generate the slightly
     # incorrect tag.
 
+    # The minimum macOS ABI version on arm64 is 11.0.  The macOS SDK
+    # on arm64 silently bumps any compatibility version specified via
+    # the MACOSX_DEPLOYMENT_TARGET environment variable to 11.0.
+    # Despite the platform ABI tag being intended to be a minimum
+    # compatibility version, pip refuses to install wheels with a
+    # platform tag specifying an ABI version lower than 11.0.  Use
+    # 11.0 as minimum ABI version on arm64.
+    if arch == 'arm64' and version < (11, 0):
+        version = (11, 0)
+
     major, minor = version
 
     if major >= 11:
-        # For macOS reelases up to 10.15, the major version number is
+        # For macOS releases up to 10.15, the major version number is
         # actually part of the OS name and the minor version is the
         # actual OS release.  Starting with macOS 11, the major
         # version number is the OS release and the minor version is
@@ -149,10 +157,29 @@ def _get_macosx_platform_tag() -> str:
     return f'macosx_{major}_{minor}_{arch}'
 
 
+def _get_ios_platform_tag() -> str:
+    # Override the iOS version if one is provided via the
+    # IPHONEOS_DEPLOYMENT_TARGET environment variable.
+    try:
+        parts = os.environ.get('IPHONEOS_DEPLOYMENT_TARGET', '').split('.')[:2]
+        version = tuple(map(int, parts + ['0'] * (2 - len(parts))))
+    except ValueError:
+        version = tuple(map(int, platform.ios_ver().release.split('.')))[:2]  # type: ignore[attr-defined]
+
+    # Although _multiarch is an internal implementation detail, it's a core part
+    # of how CPython is implemented on iOS; this attribute is also relied upon
+    # by `packaging` as part of tag determination.
+    multiarch = sys.implementation._multiarch.replace('-', '_')
+
+    return f'ios_{version[0]}_{version[1]}_{multiarch}'
+
+
 def get_platform_tag() -> str:
     platform = sysconfig.get_platform()
     if platform.startswith('macosx'):
         return _get_macosx_platform_tag()
+    if platform.startswith('ios'):
+        return _get_ios_platform_tag()
     if _32_BIT_INTERPRETER:
         # 32-bit Python running on a 64-bit kernel.
         if platform == 'linux-x86_64':
@@ -163,7 +190,7 @@ def get_platform_tag() -> str:
 
 
 class Tag:
-    def __init__(self, interpreter: Optional[str] = None, abi: Optional[str] = None, platform: Optional[str] = None):
+    def __init__(self, interpreter: str | None = None, abi: str | None = None, platform: str | None = None):
         self.interpreter = interpreter or get_interpreter_tag()
         self.abi = abi or get_abi_tag()
         self.platform = platform or get_platform_tag()

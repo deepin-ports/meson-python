@@ -23,10 +23,6 @@ them.
    exists and contains a valid Meson build directory setup, the
    project will be reconfigured using ``meson setup --reconfigure``.
 
-   The same build directory can be used by subsequent invocations of
-   ``meson-python``. This avoids having to rebuild the whole project
-   when testing changes during development.
-
    For backward compatibility reasons, the alternative ``builddir``
    spelling is also accepted.
 
@@ -48,5 +44,7 @@ them.
 
 .. option:: editable-verbose
 
-   Enable :ref:`verbose mode <how-to-guides-editable-installs-verbose>`
-   when building for an :ref:`editable install <how-to-guides-editable-installs>`.
+   Enable :ref:`verbose mode <how-to-guides-editable-installs-verbose>` when
+   building for an :ref:`editable install <how-to-guides-editable-installs>`.
+   Accepts an optional argument taking the values ``true`` or ``false``. This
+   config setting takes precedence over the project setting with the same name.

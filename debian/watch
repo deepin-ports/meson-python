@@ -1,3 +1,5 @@
-version=4
-opts=uversionmangle=s/(rc|a|b|c)/~$1/,pgpmode=auto \
-https://pypi.debian.net/meson-python/meson_python-(.+)\.(?:zip|tgz|tbz|txz|(?:tar\.(?:gz|bz2|xz)))
+Version: 5
+
+Template: Pypi
+Dist: meson_python
+Uversionmangle: s/(pre|rc|a|b|c)/~$1/

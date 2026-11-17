@@ -1,3 +1,120 @@
+meson-python (0.22.1-1) unstable; urgency=medium
+
+  * New upstream release
+  * d/control: Slightly improve test coverage by depending on libgeos-dev
+
+ -- Simon McVittie <smcv@debian.org>  Tue, 06 Oct 2026 10:03:14 +0100
+
+meson-python (0.22.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Update Lintian overrides
+
+ -- Simon McVittie <smcv@debian.org>  Sun, 27 Sep 2026 22:56:58 +0100
+
+meson-python (0.21.1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Drop patch for #1146750, applied upstream
+  * d/copyright: Update
+  * Update Lintian overrides
+  * Use debhelper compat level 14 and dpkg build API v1
+
+ -- Simon McVittie <smcv@debian.org>  Sat, 19 Sep 2026 17:59:22 +0100
+
+meson-python (0.19.0-3) unstable; urgency=medium
+
+  * Team upload.
+  * Add upstream patch for compatibility with Python 3.15
+    multiarch-tuple-tagged ABI3 extensions, with thanks to Maximiliano Curia
+    for forwarding the patch (Closes: #1146750).
+
+ -- Stuart Prescott <stuart@debian.org>  Wed, 09 Sep 2026 15:52:27 +1000
+
+meson-python (0.19.0-2) unstable; urgency=medium
+
+  * Team Upload
+  * Salsa CI: test <!nodoc> & <!nocheck> profiles
+  * Mark Sphind build-dependencies as <!nodoc>
+  * Update standards version to 4.7.4, no changes needed.
+  * Use dh-sequence-* build dependencies instead of dh --with: sphinxdoc.
+
+ -- Alexandre Detiste <tchet@debian.org>  Sat, 27 Jun 2026 01:39:41 +0200
+
+meson-python (0.19.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * d/control: Install cmake for the test suite
+  * Standards-Version: 4.7.3
+    - Remove explicit Priority: optional, no longer needed since Debian 13
+  * d/watch: Convert to uscan format v5, match "pre" versions as ~pre
+
+ -- Simon McVittie <smcv@debian.org>  Thu, 22 Jan 2026 10:41:43 +0000
+
+meson-python (0.18.0-2) unstable; urgency=medium
+
+  * Reformat packaging files with deputy
+  * Remove Rules-Requires-Root, unnecessary since Debian 13
+  * Upload to unstable
+
+ -- Simon McVittie <smcv@debian.org>  Wed, 01 Oct 2025 10:47:22 +0100
+
+meson-python (0.18.0-1) experimental; urgency=medium
+
+  * New upstream release
+  * d/salsa-ci.yml: Use recommended recipe
+  * d/control: Update build-dependency versions
+  * Standards-Version: 4.7.2 (no changes required)
+  * d/source/lintian-overrides: Ignore a use of distutils in the test
+    suite.
+    It's a workaround for a limitation of older Python versions, and
+    is guarded by a Python version check, so the relevant code doesn't
+    run in the more modern Pythons where distutils has been deprecated.
+  * Upload to experimental due to Debian 13 freeze
+
+ -- Simon McVittie <smcv@debian.org>  Sat, 24 May 2025 13:33:31 +0100
+
+meson-python (0.17.1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Drop both patches, applied upstream
+
+ -- Simon McVittie <smcv@debian.org>  Tue, 29 Oct 2024 11:40:47 +0000
+
+meson-python (0.16.0-2) unstable; urgency=medium
+
+  * Add patch to make the documentation build reproducible.
+    Thanks to Chris Lamb (Closes: #1076806)
+  * Standards-Version: 4.7.0 (no changes required)
+  * Remove version constraint on python3-packaging, unnecessary since
+    Debian 11
+  * Build-depend on pkgconf instead of pkg-config
+  * d/source/lintian-overrides: Ignore lack of B-D on python3-mesonpy.
+    Normally this would be required for packages that use pyproject.toml
+    and mesonpy, but this package *is* mesonpy, so it doesn't need a
+    circular build-dependency on itself.
+  * d/upstream/signing-key.asc: Remove.
+    Upstream releases no longer provide signatures.
+
+ -- Simon McVittie <smcv@debian.org>  Fri, 04 Oct 2024 11:38:44 +0100
+
+meson-python (0.16.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * d/control: Update Homepage (Closes: #1060361)
+  * d/upstream/metadata: Update upstream URLs here, too
+  * d/copyright: Update
+  * d/control: Add new dependency on python3-packaging
+  * Add patch from upstream to fix test failures with updated
+    pyproject-metadata (Closes: #1071329)
+  * Use the furo theme for documentation, now that it's in Debian
+  * Copy docs/ to test directory as required by one test.
+    This means we no longer need to skip the test that requires
+    docs/examples/.
+    - d/p/ignore-failing-tests-for-the-moment.patch: Drop, no longer needed
+
+ -- Simon McVittie <smcv@debian.org>  Sat, 20 Jul 2024 20:33:31 +0100
+
 meson-python (0.15.0-1) unstable; urgency=medium
 
   * New upstream release

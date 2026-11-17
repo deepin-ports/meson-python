@@ -15,31 +15,56 @@ maintain compatibility with as old as possible Meson releases.
 However, some functionality is available only with more recent Meson
 versions.
 
-.. option:: 0.63.3
+.. option:: 0.64.0
 
-   Meson is 0.63.3 is the minimum required version.
+   Meson is 0.64.0 is the minimum required version.
 
 .. option:: 1.1.0
 
    Meson 1.1.0 or later is required to support the ``exclude_files``
-   and ``exclude_directories`` arguments to Meson ``install_subdir``
+   and ``exclude_directories`` arguments to Meson ``install_subdir()``
    and similar installation functions. On older Meson versions, these
    arguments have no effect.
 
+.. option:: 1.2.0
+
+   Meson 1.2.0 or later is required to support the ``--skip-subprojects``
+   option that can be passed to ``meson install`` to not include files
+   installed by some or all subprojects in the Python wheel.
+
 .. option:: 1.2.3
 
-   Python 3.12 Meson 1.2.3 and later do not rely anymore on
-   ``distutils`` and is required to support support Python 3.12 and
-   later where the ``distutils`` modules has been removed from the
-   Python standard library. ``meson-python`` depends on this versions
-   of Meson, when installed on Python 3.12, thus packages using
-   ``meson-python`` do not need to add an explicit version
-   requirement.
+   Meson 1.2.3 or later is required to support Python 3.12 or later.
+   Since version 1.2.3, Meson does not rely anymore on the
+   ``distutils`` module, which was removed from the standard library
+   in Python 3.12. When installed on Python 3.12, ``meson-python``
+   depends on Meson 1.2.3 or later.
 
 .. option:: 1.3.0
 
    Meson 1.3.0 or later is required for compiling extension modules
    targeting the Python limited API.
+
+.. option:: 1.6.0
+
+   Meson 1.6.0 or later is required to support ``license`` and
+   ``license-files`` dynamic fields in ``pyproject.toml`` and to
+   populate the package license and license files from the ones
+   declared via the ``project()`` call in ``meson.build``.
+
+   Meson 1.6.0 or later is also required to support the
+   ``install_rpath`` argument to Meson functions that accept it, such
+   as ``library()`` and ``extension_module()``.  On older Meson
+   versions, this argument has no effect.
+
+.. option:: 1.9.0
+
+   Meson 1.9.0 or later is required to support building for iOS.
+
+   Meson 1.9.0 or later is also required to remove RPATH entries that
+   are added by Meson to allow executing parts of the project from
+   the build directory and that are normally removed during ``meson
+   install``. On older Meson versions, these entries are not removed.
 
 Build front-ends by default build packages in an isolated Python
 environment where build dependencies are installed. Most often, unless

@@ -2,13 +2,12 @@
 #
 # SPDX-License-Identifier: MIT
 
-project('meson-python', version: '0.15.0')
+project('meson-python')
 
 py = import('python').find_installation()
 
 py.install_sources(
     'mesonpy/__init__.py',
-    'mesonpy/_compat.py',
     'mesonpy/_editable.py',
     'mesonpy/_rpath.py',
     'mesonpy/_tags.py',

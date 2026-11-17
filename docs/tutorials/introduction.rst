@@ -2,11 +2,11 @@
 ..
 .. SPDX-License-Identifier: MIT
 
-.. _tutorial-introduction:
+.. _tutorial:
 
-******************************************************
-Introduction to Python packaging with ``meson-python``
-******************************************************
+********
+Tutorial
+********
 
 If you are new to Python packaging, don't worry!
 
@@ -67,12 +67,10 @@ function ``foo`` that simply returns ``"bar"``.
    :class: seealso
 
    If you need help writing a native module using Python's C API, we recommend
-   checking out the following resources.
-
-   - `The official Python C API documentation <https://docs.python.org/3/extending/index.html>`_
-   - `RealPython's "Building a Python C Extension Module" introductory tutorial <https://realpython.com/build-python-c-extension-module/>`_
-   - `pysheeet's "C Extensions" page <https://www.pythonsheets.com/notes/python-c-extensions.html>`_
-   - `pysheeet-kr's "Python C API cheatsheet" page <https://pysheeet-kr.readthedocs.io/ko/latest/notes/python-capi.html>`_
+   checking out the :ref:`extending-index` guide in the Python documentation.
+   Also consider if you need to use the CPython C API directly, or are perhaps
+   better off using a binding generator tool like Cython_, pybind11_ or
+   nanobind_ which will take care of a lot of the low-level details for you.
 
 
 The Meson build description
@@ -141,7 +139,8 @@ self-explanatory:
    description = 'Our first Python project, using meson-python!'
    readme = 'README.md'
    requires-python = '>=3.8'
-   license = {file = 'LICENSE.txt'}
+   license = 'MIT'
+   license-files = ['LICENSE.txt']
    authors = [
      {name = 'Bowsette Koopa', email = 'bowsette@example.com'},
    ]
@@ -230,7 +229,8 @@ Building the project
 
 Before continuing, ensure you have committed the three files we created so far
 to your Git repository - ``meson-python`` will only take into account the files
-that Git knows about.
+that Git knows about, and an sdist is created from the most recent commit -
+uncommitted changes are ignored.
 
 To generate the distribution artifacts we will use the `pypa/build`_ tool. It
 will create a temporary virtual environment, install all the required build
@@ -242,6 +242,9 @@ dependencies, and ask ``meson-python`` to build the artifacts.
    $ python -m build
 
 If the build succeeded, you'll have the binary artifacts in the ``dist`` folder.
+Note that by default, ``python -m build`` builds an sdist first, and then a
+wheel from the sdist. If you only want one artifact, add ``--sdist`` or
+``--wheel`` to the invocation.
 
 .. admonition:: Building wheels for multiple platforms
    :class: tip
@@ -254,6 +257,19 @@ If the build succeeded, you'll have the binary artifacts in the ``dist`` folder.
    more popular platforms (Linux, Windows, macOS, etc.). To make that work
    easier, we recommend checking out the cibuildwheel_ project, which allows you
    to automate it.
+
+Build isolation
+```````````````
+
+Building with ``python -m build`` or with ``pip`` uses build isolation by
+default. I.e., the build frontend creates a new, temporary virtual environment
+with all build dependencies before calling ``meson-python`` to build a wheel.
+
+If you disable build isolation, you are responsible for ensuring that
+``meson-python`` and all other build dependencies for the package are installed
+already in the Python environment. Note that if you use a virtual environment
+to build in, it must be activated (otherwise ``meson`` or another executable
+may not be found).
 
 
 Distributing the project
@@ -311,3 +327,6 @@ pip_.
 .. _Test PyPI: https://test.pypi.org/
 .. _PyPI: https://pypi.org/
 .. _pip: https://github.com/pypa/pip
+.. _Cython: https://cython.readthedocs.io
+.. _pybind11: https://pybind11.readthedocs.io
+.. _nanobind: https://nanobind.readthedocs.io

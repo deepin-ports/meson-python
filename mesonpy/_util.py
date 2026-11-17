@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import gzip
-import itertools
 import os
-import sys
 import tarfile
 import typing
 
@@ -18,9 +16,8 @@ from typing import IO
 
 
 if typing.TYPE_CHECKING:  # pragma: no cover
-    from typing import Any
-
-    from mesonpy._compat import Iterator, Path, Self
+    from typing import Iterator, Union
+    Path = Union[str, os.PathLike[str]]
 
 
 @contextlib.contextmanager
@@ -36,12 +33,16 @@ def chdir(path: Path) -> Iterator[Path]:
 
 @contextlib.contextmanager
 def create_targz(path: Path) -> Iterator[tarfile.TarFile]:
-    """Opens a .tar.gz file in the file system for edition.."""
+    """Opens a .tar.gz file in the file system for edition."""
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     file = typing.cast(IO[bytes], gzip.GzipFile(
         path,
-        mode='wb',
+        mode='w',
+        # Set the stream last modification time to 0.  This mimics
+        # what 'git archive' does and makes the archives byte-for-byte
+        # reproducible.
+        mtime=0,
     ))
     tar = tarfile.TarFile(
         mode='w',
@@ -53,21 +54,21 @@ def create_targz(path: Path) -> Iterator[tarfile.TarFile]:
         yield tar
 
 
-class clicounter:
-    def __init__(self, total: int) -> None:
-        self._total = total
-        self._count = itertools.count(start=1)
+def setup_windows_console() -> bool:
+    from ctypes import byref, windll  # type: ignore
+    from ctypes.wintypes import DWORD
 
-    def __enter__(self) -> Self:
-        return self
+    STD_OUTPUT_HANDLE = -11
+    ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x04
 
-    def update(self, description: str) -> None:
-        line = f'[{next(self._count)}/{self._total}] {description}'
-        if sys.stdout.isatty():
-            print('\r', line, sep='', end='\33[0K', flush=True)
-        else:
-            print(line)
+    kernel = windll.kernel32
+    stdout = kernel.GetStdHandle(STD_OUTPUT_HANDLE)
+    mode = DWORD()
 
-    def __exit__(self, exc_type: Any, exc_value: Any, exc_tb: Any) -> None:
-        if sys.stdout.isatty():
-            print()
+    if not kernel.GetConsoleMode(stdout, byref(mode)):
+        return False
+
+    if not kernel.SetConsoleMode(stdout, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING):
+        return False
+
+    return True

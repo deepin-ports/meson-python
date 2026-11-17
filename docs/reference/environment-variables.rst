@@ -8,6 +8,36 @@
 Environment variables
 *********************
 
+Environment variables can be used to influence ``meson-python``'s behavior, as
+well as the behavior of Meson and other tools that may be used during the
+build. This page lists all the environment variables directly used by
+``meson-python``.
+
+Meson recommends using command line arguments instead of environment variables,
+but does support a number of environment variables for compatibility with other
+build systems:
+
+- `Compiler and linker flag variables <https://mesonbuild.com/Reference-tables.html#compiler-and-linker-flag-environment-variables>`__
+- `Compiler and linker selection variables <https://mesonbuild.com/Reference-tables.html#compiler-and-linker-selection-variables>`__
+
+Other environment variables may influence how other tools used during the setup
+or build steps operate. For example, ``pkg-config`` supports
+``PKG_CONFIG_PATH`` which influences the search path for ``.pc`` files
+describing the available dependencies.
+
+.. warning::
+
+    Conda sets a number of environment variables during environment activation
+    for compiler/linker selection (``CC``, ``CXX``, ``FC``, ``LD``) and
+    compile/link flags (``CFLAGS``, ``CXXFLAGS``, ``FFLAGS``, ``LDFLAGS``) when
+    compilers are installed in a conda environment. This may have unexpected
+    side effects (see for example the note in
+    :ref:`how-to-guides-debug-builds`).
+
+
+Environment variables used by meson-python
+==========================================
+
 .. envvar:: ARCHFLAGS
 
    This environmental variable is used for supporting architecture cross
@@ -31,6 +61,22 @@ Environment variables
 .. _cross build definition file: https://mesonbuild.com/Cross-compilation.html
 .. _cibuildwheel: https://cibuildwheel.readthedocs.io/en/stable/
 
+.. envvar:: IPHONEOS_DEPLOYMENT_TARGET
+
+   This environment variable is used to specify the target iOS platform version
+   to the Xcode development tools.  If this environment variable is set,
+   ``meson-python`` will use the specified iOS version for the Python wheel
+   platform tag, instead than the iOS platform default of 13.0.
+
+   This variable must be set to a major/minor version, for example ``13.0`` or
+   ``15.4``.
+
+   Note that ``IPHONEOS_DEPLOYMENT_TARGET`` is the only supported mechanism
+   for specifying the target iOS version. Although the iOS toolchain supports
+   the use of ``-mios-version-min`` compile and link flags to set the target iOS
+   version, ``meson-python`` will not set the Python wheel platform tag
+   correctly unless ``IPHONEOS_DEPLOYMENT_TARGET`` is set.
+
 .. envvar:: FORCE_COLOR
 
    Setting this environment variable to any value forces the use of ANSI
@@ -39,11 +85,10 @@ Environment variables
 
 .. envvar:: MACOSX_DEPLOYMENT_TARGET
 
-   This environment variables is used of specifying the target macOS platform
-   major version to the Xcode development tools.  If this environment variable
-   is set, ``meson-python`` will use the specified macOS version for the
-   Python wheel platform tag instead than the macOS version of the build
-   machine.
+   This environment variable is used to specify the target macOS platform major
+   version to the Xcode development tools.  If this environment variable is set,
+   ``meson-python`` will use the specified macOS version for the Python wheel
+   platform tag instead than the macOS version of the build machine.
 
    This variable must be set to macOS major versions only: ``10.9`` to
    ``10.15``, ``11``, ``12``, ``13``, ...
@@ -54,10 +99,11 @@ Environment variables
    are currently designed to specify compatibility only with major version
    number granularity.
 
-   Another way of specifying the target macOS platform is to use the
-   ``-mmacosx-version-min`` compile and link flags.  However, it is not
-   possible for ``meson-python`` to detect this, and it will not set the
-   Python wheel platform tag accordingly.
+   Note that ``MACOSX_DEPLOYMENT_TARGET`` is the only supported mechanism for
+   specifying the target macOS version. Although the macOS toolchain supports
+   the use of ``-mmacosx-version-min`` compile and link flags to set the target
+   macOS version, ``meson-python`` will not set the Python wheel platform tag
+   correctly unless ``MACOSX_DEPLOYMENT_TARGET`` is set.
 
 .. envvar:: MESON
 

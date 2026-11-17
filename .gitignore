@@ -9,3 +9,5 @@ docs/_build
 .cache/
 dist/
 .coverage
+tests/packages/**/.wraplock
+*.lock

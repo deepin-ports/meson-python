@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+import ast
 import functools
 import importlib.abc
 import importlib.machinery
 import importlib.util
+import inspect
 import json
+import locale
 import os
 import pathlib
 import subprocess
@@ -33,13 +36,14 @@ else:
 
 if sys.version_info >= (3, 12):
     from importlib.resources.abc import Traversable, TraversableResources
-elif sys.version_info >= (3, 9):
-    from importlib.abc import Traversable, TraversableResources
 else:
-    class Traversable:
-        pass
-    class TraversableResources:
-        pass
+    from importlib.abc import Traversable, TraversableResources
+
+if sys.version_info >= (3, 11):
+    getencoding = locale.getencoding
+else:
+    def getencoding() -> str:
+        return locale.getpreferredencoding(False)
 
 
 MARKER = 'MESONPY_EDITABLE_SKIP'
@@ -99,7 +103,7 @@ class MesonpyTraversable(Traversable):
 
     def iterdir(self) -> Iterator[Traversable]:
         for name, node in self._tree.items():
-            yield MesonpyTraversable(name, node) if isinstance(node, dict) else pathlib.Path(node)  # type: ignore
+            yield MesonpyTraversable(name, node) if isinstance(node, dict) else pathlib.Path(node)
 
     def open(self, *args, **kwargs):  # type: ignore
         raise IsADirectoryError()
@@ -145,7 +149,7 @@ class ExtensionFileLoader(importlib.machinery.ExtensionFileLoader):
         super().__init__(name, path)
         self._tree = tree
 
-    def get_resource_reader(self, name: str) -> TraversableResources:
+    def get_resource_reader(self, name: str) -> TraversableResources:  # type: ignore[override]
         return MesonpyReader(name, self._tree)
 
 
@@ -158,7 +162,7 @@ class SourceFileLoader(importlib.machinery.SourceFileLoader):
         # disable saving bytecode
         pass
 
-    def get_resource_reader(self, name: str) -> TraversableResources:
+    def get_resource_reader(self, name: str) -> TraversableResources:  # type: ignore[override]
         return MesonpyReader(name, self._tree)
 
 
@@ -167,15 +171,14 @@ class SourcelessFileLoader(importlib.machinery.SourcelessFileLoader):
         super().__init__(name, path)
         self._tree = tree
 
-    def get_resource_reader(self, name: str) -> TraversableResources:
+    def get_resource_reader(self, name: str) -> TraversableResources:  # type: ignore[override]
         return MesonpyReader(name, self._tree)
 
 
-LOADERS = [
-    (ExtensionFileLoader, tuple(importlib.machinery.EXTENSION_SUFFIXES)),
-    (SourceFileLoader, tuple(importlib.machinery.SOURCE_SUFFIXES)),
-    (SourcelessFileLoader, tuple(importlib.machinery.BYTECODE_SUFFIXES)),
-]
+LOADERS = \
+    [(ExtensionFileLoader, s) for s in importlib.machinery.EXTENSION_SUFFIXES] + \
+    [(SourceFileLoader, s) for s in importlib.machinery.SOURCE_SUFFIXES] + \
+    [(SourcelessFileLoader, s) for s in importlib.machinery.BYTECODE_SUFFIXES]
 
 
 def build_module_spec(cls: type, name: str, path: str, tree: Optional[Node]) -> importlib.machinery.ModuleSpec:
@@ -183,7 +186,7 @@ def build_module_spec(cls: type, name: str, path: str, tree: Optional[Node]) -> 
     spec = importlib.machinery.ModuleSpec(name, loader, origin=path)
     spec.has_location = True
     if loader.is_package(name):
-        spec.submodule_search_locations = []
+        spec.submodule_search_locations = [os.path.join(__file__, name)]
     return spec
 
 
@@ -222,100 +225,199 @@ class Node(NodeBase):
         return dict.get(node, key)
 
 
-def walk(root: str, path: str = '') -> Iterator[pathlib.Path]:
-    with os.scandir(os.path.join(root, path)) as entries:
-        for entry in entries:
-            if entry.is_dir():
-                yield from walk(root, os.path.join(path, entry.name))
-            else:
-                yield pathlib.Path(path, entry.name)
+def walk(src: str, exclude_files: Set[str], exclude_dirs: Set[str]) -> Iterator[str]:
+    for root, dirnames, filenames in os.walk(src):
+        for name in dirnames.copy():
+            dirsrc = os.path.join(root, name)
+            relpath = os.path.relpath(dirsrc, src)
+            if relpath in exclude_dirs:
+                dirnames.remove(name)
+        # sort to process directories deterministically
+        dirnames.sort()
+        for name in sorted(filenames):
+            filesrc = os.path.join(root, name)
+            relpath = os.path.relpath(filesrc, src)
+            if relpath in exclude_files:
+                continue
+            yield relpath
 
 
 def collect(install_plan: Dict[str, Dict[str, Any]]) -> Node:
     tree = Node()
     for key, data in install_plan.items():
         for src, target in data.items():
+            src = os.path.normpath(src)
             path = pathlib.Path(target['destination'])
             if path.parts[0] in {'{py_platlib}', '{py_purelib}'}:
-                if key == 'install_subdirs' and os.path.isdir(src):
-                    for entry in walk(src):
-                        tree[(*path.parts[1:], *entry.parts)] = os.path.join(src, *entry.parts)
+                if key == 'install_subdirs' or key == 'targets' and os.path.isdir(src):
+                    exclude_files = {os.path.normpath(x) for x in target.get('exclude_files', [])}
+                    exclude_dirs = {os.path.normpath(x) for x in target.get('exclude_dirs', [])}
+                    for entry in walk(src, exclude_files, exclude_dirs):
+                        tree[(*path.parts[1:], *entry.split(os.sep))] = os.path.join(src, entry)
                 else:
                     tree[path.parts[1:]] = src
     return tree
 
 
+def find_spec(fullname: str, tree: Node) -> Optional[importlib.machinery.ModuleSpec]:
+    namespace = False
+    parts = fullname.split('.')
+
+    # look for a package
+    package = tree.get(tuple(parts))
+    if isinstance(package, Node):
+        for loader, suffix in LOADERS:
+            src = package.get('__init__' + suffix)
+            if isinstance(src, str):
+                return build_module_spec(loader, fullname, src, package)
+        else:
+            namespace = True
+
+    # look for a module
+    for loader, suffix in LOADERS:
+        src = tree.get((*parts[:-1], parts[-1] + suffix))
+        if isinstance(src, str):
+            return build_module_spec(loader, fullname, src, None)
+
+    # namespace
+    if namespace:
+        spec = importlib.machinery.ModuleSpec(fullname, None, is_package=True)
+        assert isinstance(spec.submodule_search_locations, list)  # make mypy happy
+        spec.submodule_search_locations.append(os.path.join(__file__, fullname))
+        return spec
+
+    return None
+
+
 class MesonpyMetaFinder(importlib.abc.MetaPathFinder):
-    def __init__(self, names: Set[str], path: str, cmd: List[str], verbose: bool = False):
+    def __init__(self, package: str, names: Set[str], path: str, cmd: List[str], verbose: bool = False):
+        self._name = package
         self._top_level_modules = names
         self._build_path = path
         self._build_cmd = cmd
         self._verbose = verbose
         self._loaders: List[Tuple[type, str]] = []
-        for loader, suffixes in LOADERS:
-            self._loaders.extend((loader, suffix) for suffix in suffixes)
 
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}({self._build_path!r})'
+        return f'{self.__class__.__name__}({self._name!r}, {self._build_path!r})'
 
-    def find_spec(
-            self,
-            fullname: str,
-            path: Optional[Sequence[Union[bytes, str]]] = None,
-            target: Optional[ModuleType] = None
-    ) -> Optional[importlib.machinery.ModuleSpec]:
-        if fullname.split('.', maxsplit=1)[0] in self._top_level_modules:
-            if self._build_path in os.environ.get(MARKER, '').split(os.pathsep):
-                return None
-            namespace = False
-            tree = self.rebuild()
-            parts = fullname.split('.')
+    def find_spec(self, fullname: str,
+                  path: Optional[Sequence[Union[bytes, str]]] = None,
+                  target: Optional[ModuleType] = None) -> Optional[importlib.machinery.ModuleSpec]:
+        if fullname.split('.', 1)[0] not in self._top_level_modules:
+            return None
+        if self._build_path in os.environ.get(MARKER, '').split(os.pathsep):
+            return None
+        tree = self._rebuild()
+        return find_spec(fullname, tree)
 
-            # look for a package
-            package = tree.get(tuple(parts))
-            if isinstance(package, Node):
-                for loader, suffix in self._loaders:
-                    src = package.get('__init__' + suffix)
-                    if isinstance(src, str):
-                        return build_module_spec(loader, fullname, src, package)
-                else:
-                    namespace = True
-
-            # look for a module
-            for loader, suffix in self._loaders:
-                src = tree.get((*parts[:-1], parts[-1] + suffix))
-                if isinstance(src, str):
-                    return build_module_spec(loader, fullname, src, None)
-
-            # namespace
-            if namespace:
-                spec = importlib.machinery.ModuleSpec(fullname, None)
-                spec.submodule_search_locations = []
-                return spec
-
-        return None
+    def _work_to_do(self, env: dict[str, str]) -> bool:
+        if sys.platform == 'win32':
+            # On Windows the build command is 'meson compile' eventually with a --ninja-args= option.
+            if self._build_cmd[-1].startswith('--ninja-args='):
+                ninja_args = ast.literal_eval(self._build_cmd[-1].split('=', 1)[1]) + ['-n']
+                dry_run_build_cmd = self._build_cmd[:-1] + [f'--ninja-args={ninja_args!r}']
+            else:
+                dry_run_build_cmd = self._build_cmd + ['--ninja-args=-n']
+        else:
+            dry_run_build_cmd = self._build_cmd + ['-n']
+        # Check adapted from
+        # https://github.com/mesonbuild/meson/blob/a35d4d368a21f4b70afa3195da4d6292a649cb4c/mesonbuild/mtest.py#L1635-L1636
+        p = subprocess.run(dry_run_build_cmd, cwd=self._build_path, env=env, check=False, capture_output=True)
+        return b'ninja: no work to do.' not in p.stdout and b'samu: nothing to do' not in p.stdout
 
     @functools.lru_cache(maxsize=1)
-    def rebuild(self) -> Node:
-        # skip editable wheel lookup during rebuild: during the build
-        # the module we are rebuilding might be imported causing a
-        # rebuild loop.
-        env = os.environ.copy()
-        env[MARKER] = os.pathsep.join((env.get(MARKER, ''), self._build_path))
+    def _rebuild(self) -> Node:
+        try:
+            # Skip editable wheel lookup during rebuild: during the build
+            # the module we are rebuilding might be imported causing a
+            # rebuild loop.
+            env = os.environ.copy()
+            env[MARKER] = os.pathsep.join((env.get(MARKER, ''), self._build_path))
 
-        if self._verbose or bool(env.get(VERBOSE, '')):
-            print('+ ' + ' '.join(self._build_cmd))
-            stdout = None
-        else:
-            stdout = subprocess.DEVNULL
-
-        subprocess.run(self._build_cmd, cwd=self._build_path, env=env, stdout=stdout, check=True)
+            if self._verbose or bool(env.get(VERBOSE, '')):
+                log_path = None
+                # We want to show some output only if there is some work to do.
+                if self._work_to_do(env):
+                    build_command = ' '.join(self._build_cmd)
+                    print(f'meson-python: building {self._name}: {build_command}', flush=True)
+                    subprocess.run(self._build_cmd, cwd=self._build_path, env=env, check=True)
+            else:
+                # Redirect build log to file.
+                log_path = os.path.join(self._build_path, 'meson-logs', 'meson-python-build-log.txt')
+                # It does not matter if the log file is opened in text or
+                # binary mode: `subprocess.run()` directly connects the
+                # underlying file descriptor to the child process stdout.
+                with open(log_path, 'w') as log:
+                    subprocess.run(self._build_cmd, cwd=self._build_path, env=env, check=True,
+                                   stderr=subprocess.STDOUT, stdout=log)
+        except subprocess.CalledProcessError as err:
+            msg = f'rebuilding the "{self._name}" editable package failed'
+            if log_path:
+                # Compiler and other tools are expected to write log
+                # messages using the environment default text encoding.
+                # Since Python 3.15, UTF-8 mode is the default, thus
+                # explicitly set the encoding.
+                with open(log_path, 'r', encoding=getencoding(), errors='backslashreplace') as log:
+                    # Skip to the error.
+                    for line in log:
+                        if line.startswith('FAILED: '):
+                            break
+                    else:
+                        # When no `FAILED: ` line is found, rewind to the
+                        # beginning of the log.
+                        log.seek(0)
+                    if line.strip().endswith(' build.ninja'):
+                        # When the error occurred when rebuilding `ninja.build`,
+                        # the meson output appears before the `FAILED: ` line.
+                        # Rewind the build log to the beginning to report the
+                        # error.
+                        log.seek(0)
+                    error = log.read()
+                if sys.version_info >= (3, 11):
+                    exc = ImportError(msg)
+                    exc.add_note(error)
+                    raise exc from err
+                msg = f'{msg}:\n{error}'
+            raise ImportError(msg) from err
 
         install_plan_path = os.path.join(self._build_path, 'meson-info', 'intro-install_plan.json')
         with open(install_plan_path, 'r', encoding='utf8') as f:
             install_plan = json.load(f)
         return collect(install_plan)
 
+    def _path_hook(self, path: str) -> MesonpyPathFinder:
+        if os.altsep:
+            path = path.replace(os.altsep, os.sep)
+        path, _, key = path.rpartition(os.sep)
+        if path == __file__:
+            tree = self._rebuild()
+            node = tree.get(tuple(key.split('.')))
+            if isinstance(node, Node):
+                return MesonpyPathFinder(node)
+        raise ImportError
 
-def install(names: Set[str], path: str, cmd: List[str], verbose: bool) -> None:
-    sys.meta_path.insert(0, MesonpyMetaFinder(names, path, cmd, verbose))
+
+class MesonpyPathFinder(importlib.abc.PathEntryFinder):
+    def __init__(self, tree: Node):
+        self._tree = tree
+
+    def find_spec(self, fullname: str, target: Optional[ModuleType] = None) -> Optional[importlib.machinery.ModuleSpec]:
+        return find_spec(fullname, self._tree)
+
+    def iter_modules(self, prefix: str) -> Iterator[Tuple[str, bool]]:
+        yielded = set()
+        for name, node in self._tree.items():
+            modname = inspect.getmodulename(name)
+            if modname == '__init__' or modname in yielded:
+                continue
+            if isinstance(node, Node):
+                modname = name
+                for _, suffix in LOADERS:
+                    src = node.get('__init__' + suffix)
+                    if isinstance(src, str):
+                        yielded.add(modname)
+                        yield prefix + modname, True
+            elif modname and '.' not in modname:
+                yielded.add(modname)
+                yield prefix + modname, False
